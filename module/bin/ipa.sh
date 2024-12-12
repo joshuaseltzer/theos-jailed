@@ -57,11 +57,10 @@ app_binary="$appdir/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$i
 install_name_tool -add_rpath "@executable_path/$COPY_PATH" "$app_binary"
 for file in "${inject_files[@]}"; do
 	filename=$(basename "$file")
+	install_name_tool -change "$STUB_SUBSTRATE_INSTALL_PATH" "$SUBSTRATE_INSTALL_PATH" "$full_copy_path/$filename"
 	if [[ $FAKESIGN_IPA = 1 ]]; then
-		install_name_tool -change "$STUB_SUBSTRATE_INSTALL_PATH" "$SUBSTRATE_INSTALL_PATH" "$full_copy_path/$filename"
 		"$INSERT_DYLIB" --inplace --no-strip-codesig "@rpath/$(basename "$file")" "$app_binary"
 	else
-		install_name_tool -change "$STUB_SUBSTRATE_INSTALL_PATH" "$SUBSTRATE_INSTALL_PATH" "$full_copy_path/$filename"
 		"$INSERT_DYLIB" --inplace --all-yes "@rpath/$(basename "$file")" "$app_binary"
 	fi
 
