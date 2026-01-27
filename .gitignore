@@ -6,3 +6,5 @@ addons/*/obj
 addons/*/packages
 
 addons/flex/FLEX
+
+*.DS_Store
