@@ -58,7 +58,7 @@ install_name_tool -add_rpath "@executable_path/$COPY_PATH" "$app_binary"
 for file in "${inject_files[@]}"; do
 	filename=$(basename "$file")
 	install_name_tool -change "$STUB_SUBSTRATE_INSTALL_PATH" "$SUBSTRATE_INSTALL_PATH" "$full_copy_path/$filename"
-	if [[ $FAKESIGN_IPA = 1 ]]; then
+	if [[ $_FAKESIGN_IPA = 1 ]]; then
 		"$INSERT_DYLIB" --inplace --no-strip-codesig "@rpath/$(basename "$file")" "$app_binary"
 	else
 		"$INSERT_DYLIB" --inplace --all-yes "@rpath/$(basename "$file")" "$app_binary"
@@ -71,7 +71,7 @@ done
 
 chmod +x "$app_binary"
 
-if [[ $FAKESIGN_IPA = 1 ]]; then
+if [[ $_FAKESIGN_IPA = 1 ]]; then
 	log 4 "Fakesigning $app"
 	ldid -s "$appdir"
 elif [[ $_CODESIGN_IPA = 1 ]]; then
@@ -107,6 +107,20 @@ elif [[ $_CODESIGN_IPA = 1 ]]; then
 	/usr/libexec/PlistBuddy -x -c "Print :Entitlements" "$PROFILE_FILE" > "$ENTITLEMENTS"
 	if [[ $? != 0 ]]; then
 		error "Failed to generate entitlements"
+	fi
+
+	if [[ $_FIX_ENTITLEMENTS = 1 ]]; then
+		log 4 "Fixing entitlements"
+
+		# https://github.com/dayanch96/iSigner/blob/main/resign.sh#L24
+		# fix iCloud environment (force it to 'Production')
+		/usr/libexec/PlistBuddy -c "Delete :com.apple.developer.icloud-container-environment" "$ENTITLEMENTS" 2>/dev/null
+		/usr/libexec/PlistBuddy -c "Add :com.apple.developer.icloud-container-environment string Production" "$ENTITLEMENTS"
+
+		# fix iCloud services (force it to array with 'CloudKit')
+		/usr/libexec/PlistBuddy -c "Delete :com.apple.developer.icloud-services" "$ENTITLEMENTS" 2>/dev/null
+		/usr/libexec/PlistBuddy -c "Add :com.apple.developer.icloud-services array" "$ENTITLEMENTS"
+		/usr/libexec/PlistBuddy -c "Add :com.apple.developer.icloud-services:0 string CloudKit" "$ENTITLEMENTS"
 	fi
 	
 	find "$appdir" \( -name "*.framework" -or -name "*.dylib" -or -name "*.appex" \) -not -path "*.framework/*" -print0 | xargs -0 codesign --entitlements "$ENTITLEMENTS" -fs "$codesign_name"
