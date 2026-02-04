@@ -16,25 +16,32 @@ if [[ -d $RESOURCES_DIR ]]; then
 fi
 
 function change_bundle_id {
-	info_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID${info_bundle_id#$app_bundle_id}" "$1"
+	if [ -f "$1" ]; then
+		old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
+		if [ -n "$old_bundle_id" ]; then
+			new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
+			log 2 "Changing bundle ID from \"${old_bundle_id}\" to \"${new_bundle_id}\" for ${1}"
+			/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${new_bundle_id}" "$1"
 
-	# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L582
-	# check for nested identifiers that might also need updated (e.g. Watch app / extension bundle IDs)
-	for key in "${NESTED_APP_REFERENCE_KEYS[@]}"; do
-		# check if Info.plist contains a nested app reference key
-		ref_bundle_id=$(PlistBuddy -c "Print ${key}" "$1" 2>/dev/null)
-		if [ -n "$ref_bundle_id" ]; then
-			/usr/libexec/PlistBuddy -c "Set ${key} $BUNDLE_ID${ref_bundle_id#$app_bundle_id}" "$1"
+			# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L582
+			# check for nested identifiers that might also need updated (e.g. Watch app / extension bundle IDs)
+			for key in "${NESTED_APP_REFERENCE_KEYS[@]}"; do
+				# check if Info.plist contains a nested app reference key
+				old_nested_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "$1")
+				if [ -n "$old_nested_id" ]; then
+					new_nested_id=$BUNDLE_ID${old_nested_id#$app_bundle_id}
+					log 2 "Changing nested app reference key \"${key}\" from \"${old_nested_id}\" to \"${new_nested_id}\" for ${1}"
+					/usr/libexec/PlistBuddy -c "Set ${key} ${new_nested_id}" "$1"
+				fi
+			done
 		fi
-	done
+	fi
 }
 
 if [[ -n $BUNDLE_ID ]]; then
-	log 2 "Setting bundle ID for all Info.plist files"
 	export -f change_bundle_id
 	export app_bundle_id
-	find "$appdir" -type f -name "Info.plist" -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}'"
+	find "$appdir" -type d \( -name "*.app" -o -name "*.appex" \) -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}/Info.plist'"
 fi
 
 if [[ -n $DISPLAY_NAME ]]; then
