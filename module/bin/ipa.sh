@@ -2,6 +2,10 @@
 
 source "$STAGE"
 
+# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L181
+# list of plist keys used for reference to and from nested apps and extensions
+NESTED_APP_REFERENCE_KEYS=(":WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
+
 function copy { 
 	rsync -a "$@" --exclude _MTN --exclude .git --exclude .svn --exclude .DS_Store --exclude ._*
 }
@@ -12,28 +16,37 @@ if [[ -d $RESOURCES_DIR ]]; then
 fi
 
 function change_bundle_id {
-	bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID${bundle_id#$app_bundle_id}" "$1"
+	info_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
+	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID${info_bundle_id#$app_bundle_id}" "$1"
+
+	# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L582
+	# check for nested identifiers that might also need updated (e.g. Watch app / extension bundle IDs)
+	for key in "${NESTED_APP_REFERENCE_KEYS[@]}"; do
+		# check if Info.plist contains a nested app reference key
+		ref_bundle_id=$(PlistBuddy -c "Print ${key}" "$1" 2>/dev/null)
+		if [ -n "$ref_bundle_id" ]; then
+			/usr/libexec/PlistBuddy -c "Set ${key} $BUNDLE_ID${ref_bundle_id#$app_bundle_id}" "$1"
+		fi
+	done
 }
 
 if [[ -n $BUNDLE_ID ]]; then
-	log 2 "Setting bundle ID"
+	log 2 "Setting bundle ID for all Info.plist files"
 	export -f change_bundle_id
 	export app_bundle_id
-	find "$appdir" -name "*.appex" -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}/Info.plist'"
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$info_plist"
+	find "$appdir" -type f -name "Info.plist" -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}'"
 fi
 
 if [[ -n $DISPLAY_NAME ]]; then
 	log 2 "Setting display name"
-	/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string" "$info_plist" 
-	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$info_plist" 
+	/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string" "$app_info_plist" 
+	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$app_info_plist" 
 fi
 
 if [[ -f $RESOURCES_DIR/Info.plist ]]; then
 	log 2 "Merging Info.plist"
 	copy "$RESOURCES_DIR/Info.plist" "$STAGING_DIR"
-	/usr/libexec/PlistBuddy -c "Merge $info_plist" "$STAGING_DIR/Info.plist"
+	/usr/libexec/PlistBuddy -c "Merge $app_info_plist" "$STAGING_DIR/Info.plist"
 	mv "$STAGING_DIR/Info.plist" "$appdir"
 fi
 
@@ -52,7 +65,7 @@ for file in "${inject_files[@]}" "${copy_files[@]}"; do
 done
 
 log 3 "Injecting dependencies"
-app_binary="$appdir/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$info_plist")"
+app_binary="$appdir/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app_info_plist")"
 
 install_name_tool -add_rpath "@executable_path/$COPY_PATH" "$app_binary"
 for file in "${inject_files[@]}"; do
