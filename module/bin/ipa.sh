@@ -2,6 +2,10 @@
 
 source "$STAGE"
 
+# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh
+# list of plist keys that will be checked inside Info.plist files to potentially change
+BUNDLE_ID_KEYS=(":CFBundleIdentifier" ":WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
+
 function copy { 
 	rsync -a "$@" --exclude _MTN --exclude .git --exclude .svn --exclude .DS_Store --exclude ._*
 }
@@ -12,28 +16,39 @@ if [[ -d $RESOURCES_DIR ]]; then
 fi
 
 function change_bundle_id {
-	bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID${bundle_id#$app_bundle_id}" "$1"
+	info_plist="$1/Info.plist"
+	if [ -f "${info_plist}" ]; then
+		log 2 "($(basename "$1"))"
+		for key in "${BUNDLE_ID_KEYS[@]}"; do
+			old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "${info_plist}")
+			if [ -n "$old_bundle_id" ]; then
+				new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
+				log 2 "    ${old_bundle_id} -> ${new_bundle_id} (${key})"
+				/usr/libexec/PlistBuddy -c "Set ${key} ${new_bundle_id}" "${info_plist}"
+			fi
+		done
+	fi
 }
 
 if [[ -n $BUNDLE_ID ]]; then
-	log 2 "Setting bundle ID"
 	export -f change_bundle_id
 	export app_bundle_id
-	find "$appdir" -name "*.appex" -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}/Info.plist'"
-	/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$info_plist"
+	log 2 "Changing bundle ID(s)"
+	while IFS= read -r -d '' bundle_folder; do
+		change_bundle_id "${bundle_folder}"
+	done < <(find "${appdir}" -type d \( -name "*.app" -o -name "*.appex" \) -print0)
 fi
 
 if [[ -n $DISPLAY_NAME ]]; then
 	log 2 "Setting display name"
-	/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string" "$info_plist" 
-	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$info_plist" 
+	/usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string" "$app_info_plist" 
+	/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$app_info_plist" 
 fi
 
 if [[ -f $RESOURCES_DIR/Info.plist ]]; then
 	log 2 "Merging Info.plist"
 	copy "$RESOURCES_DIR/Info.plist" "$STAGING_DIR"
-	/usr/libexec/PlistBuddy -c "Merge $info_plist" "$STAGING_DIR/Info.plist"
+	/usr/libexec/PlistBuddy -c "Merge $app_info_plist" "$STAGING_DIR/Info.plist"
 	mv "$STAGING_DIR/Info.plist" "$appdir"
 fi
 
@@ -52,7 +67,7 @@ for file in "${inject_files[@]}" "${copy_files[@]}"; do
 done
 
 log 3 "Injecting dependencies"
-app_binary="$appdir/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$info_plist")"
+app_binary="$appdir/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app_info_plist")"
 
 install_name_tool -add_rpath "@executable_path/$COPY_PATH" "$app_binary"
 for file in "${inject_files[@]}"; do

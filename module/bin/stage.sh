@@ -27,5 +27,5 @@ if [[ ! -d $appdir ]]; then
 	error "\"$(basename "$IPA")\" does not contain an application"
 fi
 
-info_plist="$appdir/Info.plist"
-app_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$info_plist")
+app_info_plist="$appdir/Info.plist"
+app_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$app_info_plist")
