@@ -2,9 +2,9 @@
 
 source "$STAGE"
 
-# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L181
-# list of plist keys used for reference to and from nested apps and extensions
-NESTED_APP_REFERENCE_KEYS=(":WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
+# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh
+# list of plist keys that will be checked inside Info.plist files to potentially change
+BUNDLE_ID_KEYS=(":CFBundleIdentifier :WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
 
 function copy { 
 	rsync -a "$@" --exclude _MTN --exclude .git --exclude .svn --exclude .DS_Store --exclude ._*
@@ -16,25 +16,17 @@ if [[ -d $RESOURCES_DIR ]]; then
 fi
 
 function change_bundle_id {
-	if [ -f "$1" ]; then
-		old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
-		if [ -n "$old_bundle_id" ]; then
-			new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
-			log 2 "Setting \"${old_bundle_id}\" to \"${new_bundle_id}\""
-			/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${new_bundle_id}" "$1"
-
-			# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L582
-			# check for nested identifiers that might also need updated (e.g. Watch app / extension bundle IDs)
-			for key in "${NESTED_APP_REFERENCE_KEYS[@]}"; do
-				# check if Info.plist contains a nested app reference key
-				old_nested_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "$1")
-				if [ -n "$old_nested_id" ]; then
-					new_nested_id=$BUNDLE_ID${old_nested_id#$app_bundle_id}
-					log 2 "Setting \"${old_nested_id}\" to \"${new_nested_id}\""
-					/usr/libexec/PlistBuddy -c "Set ${key} ${new_nested_id}" "$1"
-				fi
-			done
-		fi
+	info_plist="$1/Info.plist"
+	if [ -f "${info_plist}" ]; then
+		log 2 "($(basename "$1")) Changing bundle ID(s)"
+		for key in "${BUNDLE_ID_KEYS[@]}"; do
+			old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "${info_plist}")
+			if [ -n "$old_bundle_id" ]; then
+				new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
+				log 2 "  ${old_bundle_id} ==> ${new_bundle_id} (${key})"
+				/usr/libexec/PlistBuddy -c "Set ${key} ${new_bundle_id}" "${info_plist}"
+			fi
+		done
 	fi
 }
 
@@ -42,7 +34,7 @@ if [[ -n $BUNDLE_ID ]]; then
 	export -f change_bundle_id
 	export app_bundle_id
 	while IFS= read -r -d '' bundle_folder; do
-		change_bundle_id "${bundle_folder}/Info.plist"
+		change_bundle_id "${bundle_folder}"
 	done < <(find "${appdir}" -type d \( -name "*.app" -o -name "*.appex" \) -print0)
 fi
 
