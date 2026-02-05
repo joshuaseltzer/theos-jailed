@@ -20,7 +20,7 @@ function change_bundle_id {
 		old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$1")
 		if [ -n "$old_bundle_id" ]; then
 			new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
-			log 2 "Changing bundle ID from \"${old_bundle_id}\" to \"${new_bundle_id}\" for ${1}"
+			log 2 "Setting \"${old_bundle_id}\" to \"${new_bundle_id}\""
 			/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${new_bundle_id}" "$1"
 
 			# https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh#L582
@@ -30,7 +30,7 @@ function change_bundle_id {
 				old_nested_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "$1")
 				if [ -n "$old_nested_id" ]; then
 					new_nested_id=$BUNDLE_ID${old_nested_id#$app_bundle_id}
-					log 2 "Changing nested app reference key \"${key}\" from \"${old_nested_id}\" to \"${new_nested_id}\" for ${1}"
+					log 2 "Setting \"${old_nested_id}\" to \"${new_nested_id}\""
 					/usr/libexec/PlistBuddy -c "Set ${key} ${new_nested_id}" "$1"
 				fi
 			done
@@ -41,7 +41,9 @@ function change_bundle_id {
 if [[ -n $BUNDLE_ID ]]; then
 	export -f change_bundle_id
 	export app_bundle_id
-	find "$appdir" -type d \( -name "*.app" -o -name "*.appex" \) -print0 | xargs -I {} -0 bash -c "change_bundle_id '{}/Info.plist'"
+	while IFS= read -r -d '' bundle_folder; do
+		change_bundle_id "${bundle_folder}/Info.plist"
+	done < <(find "${appdir}" -type d \( -name "*.app" -o -name "*.appex" \) -print0)
 fi
 
 if [[ -n $DISPLAY_NAME ]]; then
