@@ -4,7 +4,7 @@ source "$STAGE"
 
 # https://github.com/fastlane/fastlane/blob/cb3e7aae706af6ff330838677562fe3584afc195/sigh/lib/assets/resign.sh
 # list of plist keys that will be checked inside Info.plist files to potentially change
-BUNDLE_ID_KEYS=(":CFBundleIdentifier :WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
+BUNDLE_ID_KEYS=(":CFBundleIdentifier" ":WKCompanionAppBundleIdentifier" ":NSExtension:NSExtensionAttributes:WKAppBundleIdentifier")
 
 function copy { 
 	rsync -a "$@" --exclude _MTN --exclude .git --exclude .svn --exclude .DS_Store --exclude ._*
@@ -18,12 +18,12 @@ fi
 function change_bundle_id {
 	info_plist="$1/Info.plist"
 	if [ -f "${info_plist}" ]; then
-		log 2 "($(basename "$1")) Changing bundle ID(s)"
+		log 2 "($(basename "$1"))"
 		for key in "${BUNDLE_ID_KEYS[@]}"; do
 			old_bundle_id=$(/usr/libexec/PlistBuddy -c "Print ${key}" "${info_plist}")
 			if [ -n "$old_bundle_id" ]; then
 				new_bundle_id=$BUNDLE_ID${old_bundle_id#$app_bundle_id}
-				log 2 "  ${old_bundle_id} ==> ${new_bundle_id} (${key})"
+				log 2 "    ${old_bundle_id} -> ${new_bundle_id} (${key})"
 				/usr/libexec/PlistBuddy -c "Set ${key} ${new_bundle_id}" "${info_plist}"
 			fi
 		done
@@ -33,6 +33,7 @@ function change_bundle_id {
 if [[ -n $BUNDLE_ID ]]; then
 	export -f change_bundle_id
 	export app_bundle_id
+	log 2 "Changing bundle ID(s)"
 	while IFS= read -r -d '' bundle_folder; do
 		change_bundle_id "${bundle_folder}"
 	done < <(find "${appdir}" -type d \( -name "*.app" -o -name "*.appex" \) -print0)
